@@ -7,6 +7,7 @@ WHITE = (255, 255, 255)
 DARK = (40, 40, 50)
 WALL_COLOR = (90, 90, 110)
 GOAL_COLOR = (60, 200, 120)
+TIMEOUT_COLOR = (220, 80, 80)
 
 
 class GameEngine:
@@ -33,7 +34,6 @@ class GameEngine:
             }
         }
 
-        # Start with Medium difficulty
         self.current_difficulty = "Medium"
 
         # Maze
@@ -59,8 +59,40 @@ class GameEngine:
         self.show_difficulty_menu = False
         self.exit_requested = False
 
-        # Set initial game
+        # Sound setup
+        pygame.mixer.set_num_channels(8)
+
+        self.bounce_sound = self._load_sound(
+            "sounds/bounce.wav"
+        )
+
+        self.goal_sound = self._load_sound(
+            "sounds/goal.wav"
+        )
+
+        self.timeout_sound = self._load_sound(
+            "sounds/timeout.wav"
+        )
+
+        # Dedicated channels prevent sounds from interfering
+        self.bounce_channel = pygame.mixer.Channel(0)
+        self.goal_channel = pygame.mixer.Channel(1)
+        self.timeout_channel = pygame.mixer.Channel(2)
+
+        # Initialize game
         self.reset_game("Medium")
+
+    def _load_sound(self, filename):
+        """Load a sound effect safely."""
+
+        try:
+            sound = pygame.mixer.Sound(filename)
+            sound.set_volume(1.0)
+            return sound
+
+        except (pygame.error, FileNotFoundError):
+            print(f"Warning: Could not load sound: {filename}")
+            return None
 
     def _build_maze(self):
         walls = []
@@ -90,7 +122,7 @@ class GameEngine:
         self.friction = settings["friction"]
         self.time_limit_ms = settings["time_limit_ms"]
 
-        # Reset marble position and velocity
+        # Reset marble
         self.marble = Marble(50, 50)
         self.max_speed = 9
 
@@ -102,7 +134,7 @@ class GameEngine:
         # Hide difficulty menu
         self.show_difficulty_menu = False
 
-        # Start timer again
+        # Reset timer
         self.start_ticks = pygame.time.get_ticks()
 
     def handle_event(self, event):
@@ -117,17 +149,17 @@ class GameEngine:
         # Game-over screen
         if self.game_over and not self.show_difficulty_menu:
 
-            # Press R or Enter to replay
+            # Replay
             if event.key in (pygame.K_r, pygame.K_RETURN):
                 self.show_difficulty_menu = True
 
-            # Press Escape or Q to exit
+            # Exit
             elif event.key in (pygame.K_ESCAPE, pygame.K_q):
                 self.exit_requested = True
 
             return
 
-        # Difficulty selection screen
+        # Difficulty selection
         if self.show_difficulty_menu:
 
             if event.key == pygame.K_1:
@@ -143,7 +175,6 @@ class GameEngine:
                 self.exit_requested = True
 
     def handle_input(self):
-        # Don't control marble during menus/game over
         if self.game_over or self.show_difficulty_menu:
             return
 
@@ -161,7 +192,6 @@ class GameEngine:
         self.marble.vy += ay
 
     def update(self):
-        # Don't update during menus/game over
         if self.game_over or self.show_difficulty_menu:
             return
 
@@ -172,6 +202,11 @@ class GameEngine:
             self.game_over = True
             self.result = "timeout"
             self.finish_time_ms = self.time_limit_ms
+
+            # Play timeout sound
+            if self.timeout_sound:
+                self.timeout_channel.play(self.timeout_sound)
+
             return
 
         # Apply friction
@@ -205,10 +240,13 @@ class GameEngine:
             self.result = "solved"
             self.finish_time_ms = elapsed
 
+            # Play goal sound
+            if self.goal_sound:
+                self.goal_channel.play(self.goal_sound)
+
     def _resolve_wall_collisions(self):
         """
-        Resolve collisions using true circle-vs-rectangle
-        collision detection.
+        True circle-vs-rectangle collision detection.
         """
 
         for wall in self.walls:
@@ -232,13 +270,14 @@ class GameEngine:
 
             distance_squared = dx * dx + dy * dy
 
-            # Collision occurs only when the actual circular
-            # marble touches or overlaps the wall.
+            # Collision only when the actual circular marble
+            # touches or overlaps the wall.
             if distance_squared <= self.marble.radius ** 2:
 
                 distance = distance_squared ** 0.5
 
                 if distance > 0:
+
                     # Push marble outside the wall
                     overlap = self.marble.radius - distance
 
@@ -248,14 +287,16 @@ class GameEngine:
                     self.marble.x += nx * overlap
                     self.marble.y += ny * overlap
 
-                    # Check whether marble is moving toward wall
+                    # Determine whether marble is moving
+                    # toward the wall.
                     velocity_toward_wall = (
                         self.marble.vx * nx
                         + self.marble.vy * ny
                     )
 
-                    # Bounce only if moving into wall
+                    # Bounce only if moving into the wall
                     if velocity_toward_wall < 0:
+
                         self.marble.vx -= (
                             1.3 * velocity_toward_wall * nx
                         )
@@ -263,6 +304,12 @@ class GameEngine:
                         self.marble.vy -= (
                             1.3 * velocity_toward_wall * ny
                         )
+
+                        # Play bounce sound
+                        if self.bounce_sound:
+                            self.bounce_channel.play(
+                                self.bounce_sound
+                            )
 
                 else:
                     # Safety fallback
@@ -274,7 +321,7 @@ class GameEngine:
     def render(self, screen):
         screen.fill(DARK)
 
-        # Show difficulty selection menu
+        # Difficulty selection menu
         if self.show_difficulty_menu:
             self._render_difficulty_menu(screen)
             return
@@ -360,7 +407,7 @@ class GameEngine:
 
         else:
             title = "TIME'S UP!"
-            title_color = (220, 80, 80)
+            title_color = TIMEOUT_COLOR
 
             message = (
                 "The maze was not solved in time."
@@ -382,7 +429,7 @@ class GameEngine:
             title_rect
         )
 
-        # Result
+        # Result message
         message_surface = self.small_font.render(
             message,
             True,
@@ -486,7 +533,7 @@ class GameEngine:
 
         screen.blit(hard, hard_rect)
 
-        # Settings
+        # Difficulty settings
         settings = self.small_font.render(
             "Easy: 60s | Medium: 45s | Hard: 30s",
             True,

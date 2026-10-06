@@ -1,8 +1,20 @@
 import pygame
 from game.game_engine import GameEngine
 
+# Initialize audio before pygame
+pygame.mixer.pre_init(
+    frequency=44100,
+    size=-16,
+    channels=2,
+    buffer=512
+)
+
 # Initialize pygame
 pygame.init()
+
+# Make sure the mixer is available
+if not pygame.mixer.get_init():
+    pygame.mixer.init()
 
 # Screen dimensions
 WIDTH, HEIGHT = 600, 500
