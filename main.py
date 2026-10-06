@@ -1,7 +1,7 @@
 import pygame
 from game.game_engine import GameEngine
 
-# Initialize pygame/Start application
+# Initialize pygame
 pygame.init()
 
 # Screen dimensions
@@ -13,15 +13,15 @@ pygame.display.set_caption("Marble Tilt Maze - Pygame Version")
 clock = pygame.time.Clock()
 FPS = 60
 
-# Game loop
+# Game engine
 engine = GameEngine(WIDTH, HEIGHT)
+
 
 def main():
     running = True
+
     while running:
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
             engine.handle_event(event)
 
         engine.handle_input()
@@ -31,7 +31,12 @@ def main():
         pygame.display.flip()
         clock.tick(FPS)
 
+        # Exit after the player responds to the game-over screen
+        if engine.exit_requested:
+            running = False
+
     pygame.quit()
+
 
 if __name__ == "__main__":
     main()

@@ -34,11 +34,14 @@ class GameEngine:
 
         # Fonts
         self.font = pygame.font.SysFont("Arial", 26)
+        self.end_font = pygame.font.SysFont("Arial", 48)
+        self.small_font = pygame.font.SysFont("Arial", 24)
 
         # Game state
         self.game_over = False
         self.result = None
         self.finish_time_ms = None
+        self.exit_requested = False
 
     def _build_maze(self):
         walls = []
@@ -58,8 +61,15 @@ class GameEngine:
         return walls
 
     def handle_event(self, event):
-        # The game is controlled by the mouse position.
-        pass
+        # Close the game window normally
+        if event.type == pygame.QUIT:
+            self.exit_requested = True
+            return
+
+        # Once the game is over, wait for keyboard input
+        if self.game_over:
+            if event.type == pygame.KEYDOWN:
+                self.exit_requested = True
 
     def handle_input(self):
         if self.game_over:
@@ -88,6 +98,7 @@ class GameEngine:
         if elapsed >= self.time_limit_ms:
             self.game_over = True
             self.result = "timeout"
+            self.finish_time_ms = self.time_limit_ms
             return
 
         # Apply friction
@@ -121,7 +132,7 @@ class GameEngine:
     def _resolve_wall_collisions(self):
         """
         Resolve collisions using true circle-vs-rectangle
-        collision detection instead of bounding-box collision.
+        collision detection.
         """
 
         for wall in self.walls:
@@ -145,15 +156,14 @@ class GameEngine:
 
             distance_squared = dx * dx + dy * dy
 
-            # The marble has touched the wall only when the
-            # actual circular edge reaches the rectangle.
+            # Collision occurs only when the actual circular
+            # marble touches or overlaps the wall.
             if distance_squared <= self.marble.radius ** 2:
 
                 distance = distance_squared ** 0.5
 
                 if distance > 0:
-
-                    # Push the marble outside the wall.
+                    # Push marble outside the wall
                     overlap = self.marble.radius - distance
 
                     nx = dx / distance
@@ -162,14 +172,14 @@ class GameEngine:
                     self.marble.x += nx * overlap
                     self.marble.y += ny * overlap
 
-                    # Determine whether the marble is moving
-                    # toward the wall.
+                    # Check whether the marble is moving toward
+                    # the wall.
                     velocity_toward_wall = (
                         self.marble.vx * nx
                         + self.marble.vy * ny
                     )
 
-                    # Bounce only if moving into the wall.
+                    # Bounce only if moving into the wall
                     if velocity_toward_wall < 0:
                         self.marble.vx -= (
                             1.3 * velocity_toward_wall * nx
@@ -217,7 +227,7 @@ class GameEngine:
             self.marble.radius
         )
 
-        # Draw timer
+        # Draw timer while game is active
         elapsed = pygame.time.get_ticks() - self.start_ticks
 
         seconds_left = max(
@@ -233,18 +243,66 @@ class GameEngine:
 
         screen.blit(timer_text, (10, 10))
 
-        # Existing console-based game-over message
-        if self.game_over and not getattr(
-            self,
-            "_game_over_logged",
-            False
-        ):
-            if self.result == "solved":
-                print(
-                    f"Solved! Finished in "
-                    f"{self.finish_time_ms / 1000:.1f}s"
-                )
-            else:
-                print("Time's up! Maze not solved.")
+        # Draw game-over screen
+        if self.game_over:
+            self._render_game_over(screen)
 
-            self._game_over_logged = True
+    def _render_game_over(self, screen):
+        # Dark overlay
+        overlay = pygame.Surface(
+            (self.width, self.height),
+            pygame.SRCALPHA
+        )
+        overlay.fill((0, 0, 0, 190))
+        screen.blit(overlay, (0, 0))
+
+        if self.result == "solved":
+            title = "MAZE SOLVED!"
+            title_color = GOAL_COLOR
+
+            finish_seconds = self.finish_time_ms / 1000
+            message = f"Finished in {finish_seconds:.1f} seconds"
+
+        else:
+            title = "TIME'S UP!"
+            title_color = (220, 80, 80)
+            message = "The maze was not solved in time."
+
+        # Title
+        title_surface = self.end_font.render(
+            title,
+            True,
+            title_color
+        )
+
+        title_rect = title_surface.get_rect(
+            center=(self.width // 2, 190)
+        )
+
+        screen.blit(title_surface, title_rect)
+
+        # Result message
+        message_surface = self.small_font.render(
+            message,
+            True,
+            WHITE
+        )
+
+        message_rect = message_surface.get_rect(
+            center=(self.width // 2, 250)
+        )
+
+        screen.blit(message_surface, message_rect)
+
+        # Input instruction
+        instruction = self.small_font.render(
+            "Press any key to exit",
+            True,
+            WHITE
+        )
+
+        instruction_rect = instruction.get_rect(
+            center=(self.width // 2, 320)
+        )
+
+        screen.blit(instruction, instruction_rect)
