@@ -14,11 +14,27 @@ class GameEngine:
         self.width = width
         self.height = height
 
-        # Marble settings
-        self.marble = Marble(50, 50)
-        self.tilt_strength = 0.6
-        self.friction = 0.02
-        self.max_speed = 9
+        # Difficulty settings
+        self.difficulties = {
+            "Easy": {
+                "tilt_strength": 0.4,
+                "friction": 0.05,
+                "time_limit_ms": 60000
+            },
+            "Medium": {
+                "tilt_strength": 0.6,
+                "friction": 0.02,
+                "time_limit_ms": 45000
+            },
+            "Hard": {
+                "tilt_strength": 0.9,
+                "friction": 0.01,
+                "time_limit_ms": 30000
+            }
+        }
+
+        # Start with Medium difficulty
+        self.current_difficulty = "Medium"
 
         # Maze
         self.walls = self._build_maze()
@@ -28,20 +44,23 @@ class GameEngine:
         self.goal_y = height - 60
         self.goal_radius = 22
 
-        # Timer
-        self.time_limit_ms = 45000
-        self.start_ticks = pygame.time.get_ticks()
-
         # Fonts
         self.font = pygame.font.SysFont("Arial", 26)
         self.end_font = pygame.font.SysFont("Arial", 48)
         self.small_font = pygame.font.SysFont("Arial", 24)
+        self.menu_font = pygame.font.SysFont("Arial", 32)
 
         # Game state
         self.game_over = False
         self.result = None
         self.finish_time_ms = None
+
+        # Replay/menu state
+        self.show_difficulty_menu = False
         self.exit_requested = False
+
+        # Set initial game
+        self.reset_game("Medium")
 
     def _build_maze(self):
         walls = []
@@ -60,19 +79,72 @@ class GameEngine:
 
         return walls
 
+    def reset_game(self, difficulty):
+        """Reset the game using the selected difficulty."""
+
+        self.current_difficulty = difficulty
+
+        settings = self.difficulties[difficulty]
+
+        self.tilt_strength = settings["tilt_strength"]
+        self.friction = settings["friction"]
+        self.time_limit_ms = settings["time_limit_ms"]
+
+        # Reset marble position and velocity
+        self.marble = Marble(50, 50)
+        self.max_speed = 9
+
+        # Reset game state
+        self.game_over = False
+        self.result = None
+        self.finish_time_ms = None
+
+        # Hide difficulty menu
+        self.show_difficulty_menu = False
+
+        # Start timer again
+        self.start_ticks = pygame.time.get_ticks()
+
     def handle_event(self, event):
-        # Close the game window normally
+        # Close window
         if event.type == pygame.QUIT:
             self.exit_requested = True
             return
 
-        # Once the game is over, wait for keyboard input
-        if self.game_over:
-            if event.type == pygame.KEYDOWN:
+        if event.type != pygame.KEYDOWN:
+            return
+
+        # Game-over screen
+        if self.game_over and not self.show_difficulty_menu:
+
+            # Press R or Enter to replay
+            if event.key in (pygame.K_r, pygame.K_RETURN):
+                self.show_difficulty_menu = True
+
+            # Press Escape or Q to exit
+            elif event.key in (pygame.K_ESCAPE, pygame.K_q):
+                self.exit_requested = True
+
+            return
+
+        # Difficulty selection screen
+        if self.show_difficulty_menu:
+
+            if event.key == pygame.K_1:
+                self.reset_game("Easy")
+
+            elif event.key == pygame.K_2:
+                self.reset_game("Medium")
+
+            elif event.key == pygame.K_3:
+                self.reset_game("Hard")
+
+            elif event.key in (pygame.K_ESCAPE, pygame.K_q):
                 self.exit_requested = True
 
     def handle_input(self):
-        if self.game_over:
+        # Don't control marble during menus/game over
+        if self.game_over or self.show_difficulty_menu:
             return
 
         mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -89,7 +161,8 @@ class GameEngine:
         self.marble.vy += ay
 
     def update(self):
-        if self.game_over:
+        # Don't update during menus/game over
+        if self.game_over or self.show_difficulty_menu:
             return
 
         # Check timer
@@ -106,7 +179,10 @@ class GameEngine:
         self.marble.vy *= (1 - self.friction)
 
         # Limit maximum speed
-        speed = (self.marble.vx ** 2 + self.marble.vy ** 2) ** 0.5
+        speed = (
+            self.marble.vx ** 2
+            + self.marble.vy ** 2
+        ) ** 0.5
 
         if speed > self.max_speed:
             scale = self.max_speed / speed
@@ -172,14 +248,13 @@ class GameEngine:
                     self.marble.x += nx * overlap
                     self.marble.y += ny * overlap
 
-                    # Check whether the marble is moving toward
-                    # the wall.
+                    # Check whether marble is moving toward wall
                     velocity_toward_wall = (
                         self.marble.vx * nx
                         + self.marble.vy * ny
                     )
 
-                    # Bounce only if moving into the wall
+                    # Bounce only if moving into wall
                     if velocity_toward_wall < 0:
                         self.marble.vx -= (
                             1.3 * velocity_toward_wall * nx
@@ -190,8 +265,7 @@ class GameEngine:
                         )
 
                 else:
-                    # Safety fallback if the marble center is
-                    # exactly inside the wall.
+                    # Safety fallback
                     if abs(self.marble.vx) > abs(self.marble.vy):
                         self.marble.vx *= -0.3
                     else:
@@ -199,6 +273,11 @@ class GameEngine:
 
     def render(self, screen):
         screen.fill(DARK)
+
+        # Show difficulty selection menu
+        if self.show_difficulty_menu:
+            self._render_difficulty_menu(screen)
+            return
 
         # Draw walls
         for wall in self.walls:
@@ -227,7 +306,7 @@ class GameEngine:
             self.marble.radius
         )
 
-        # Draw timer while game is active
+        # Timer
         elapsed = pygame.time.get_ticks() - self.start_ticks
 
         seconds_left = max(
@@ -243,7 +322,19 @@ class GameEngine:
 
         screen.blit(timer_text, (10, 10))
 
-        # Draw game-over screen
+        # Difficulty indicator
+        difficulty_text = self.font.render(
+            f"Difficulty: {self.current_difficulty}",
+            True,
+            WHITE
+        )
+
+        screen.blit(
+            difficulty_text,
+            (10, 42)
+        )
+
+        # Game-over screen
         if self.game_over:
             self._render_game_over(screen)
 
@@ -253,6 +344,7 @@ class GameEngine:
             (self.width, self.height),
             pygame.SRCALPHA
         )
+
         overlay.fill((0, 0, 0, 190))
         screen.blit(overlay, (0, 0))
 
@@ -261,12 +353,18 @@ class GameEngine:
             title_color = GOAL_COLOR
 
             finish_seconds = self.finish_time_ms / 1000
-            message = f"Finished in {finish_seconds:.1f} seconds"
+
+            message = (
+                f"Finished in {finish_seconds:.1f} seconds"
+            )
 
         else:
             title = "TIME'S UP!"
             title_color = (220, 80, 80)
-            message = "The maze was not solved in time."
+
+            message = (
+                "The maze was not solved in time."
+            )
 
         # Title
         title_surface = self.end_font.render(
@@ -276,12 +374,15 @@ class GameEngine:
         )
 
         title_rect = title_surface.get_rect(
-            center=(self.width // 2, 190)
+            center=(self.width // 2, 170)
         )
 
-        screen.blit(title_surface, title_rect)
+        screen.blit(
+            title_surface,
+            title_rect
+        )
 
-        # Result message
+        # Result
         message_surface = self.small_font.render(
             message,
             True,
@@ -289,20 +390,130 @@ class GameEngine:
         )
 
         message_rect = message_surface.get_rect(
-            center=(self.width // 2, 250)
+            center=(self.width // 2, 230)
         )
 
-        screen.blit(message_surface, message_rect)
+        screen.blit(
+            message_surface,
+            message_rect
+        )
 
-        # Input instruction
-        instruction = self.small_font.render(
-            "Press any key to exit",
+        # Replay instruction
+        replay_text = self.small_font.render(
+            "Press R to replay",
             True,
             WHITE
         )
 
-        instruction_rect = instruction.get_rect(
-            center=(self.width // 2, 320)
+        replay_rect = replay_text.get_rect(
+            center=(self.width // 2, 290)
         )
 
-        screen.blit(instruction, instruction_rect)
+        screen.blit(
+            replay_text,
+            replay_rect
+        )
+
+        # Exit instruction
+        exit_text = self.small_font.render(
+            "Press ESC to exit",
+            True,
+            WHITE
+        )
+
+        exit_rect = exit_text.get_rect(
+            center=(self.width // 2, 330)
+        )
+
+        screen.blit(
+            exit_text,
+            exit_rect
+        )
+
+    def _render_difficulty_menu(self, screen):
+        # Title
+        title_surface = self.end_font.render(
+            "CHOOSE DIFFICULTY",
+            True,
+            WHITE
+        )
+
+        title_rect = title_surface.get_rect(
+            center=(self.width // 2, 100)
+        )
+
+        screen.blit(
+            title_surface,
+            title_rect
+        )
+
+        # Easy
+        easy = self.menu_font.render(
+            "1 - Easy",
+            True,
+            WHITE
+        )
+
+        easy_rect = easy.get_rect(
+            center=(self.width // 2, 190)
+        )
+
+        screen.blit(easy, easy_rect)
+
+        # Medium
+        medium = self.menu_font.render(
+            "2 - Medium",
+            True,
+            WHITE
+        )
+
+        medium_rect = medium.get_rect(
+            center=(self.width // 2, 250)
+        )
+
+        screen.blit(medium, medium_rect)
+
+        # Hard
+        hard = self.menu_font.render(
+            "3 - Hard",
+            True,
+            WHITE
+        )
+
+        hard_rect = hard.get_rect(
+            center=(self.width // 2, 310)
+        )
+
+        screen.blit(hard, hard_rect)
+
+        # Settings
+        settings = self.small_font.render(
+            "Easy: 60s | Medium: 45s | Hard: 30s",
+            True,
+            WHITE
+        )
+
+        settings_rect = settings.get_rect(
+            center=(self.width // 2, 370)
+        )
+
+        screen.blit(
+            settings,
+            settings_rect
+        )
+
+        # Exit
+        exit_text = self.small_font.render(
+            "Press ESC to exit",
+            True,
+            WHITE
+        )
+
+        exit_rect = exit_text.get_rect(
+            center=(self.width // 2, 420)
+        )
+
+        screen.blit(
+            exit_text,
+            exit_rect
+        )

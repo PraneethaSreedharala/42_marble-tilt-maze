@@ -31,7 +31,6 @@ def main():
         pygame.display.flip()
         clock.tick(FPS)
 
-        # Exit after the player responds to the game-over screen
         if engine.exit_requested:
             running = False
 
